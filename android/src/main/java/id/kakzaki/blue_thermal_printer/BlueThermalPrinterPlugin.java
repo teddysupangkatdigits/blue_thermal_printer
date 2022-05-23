@@ -460,17 +460,17 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    */
   private void getBondedDevices(Result result) {
 
-    List<Map<String, Object>> list = new ArrayList<>();
-
-    for (BluetoothDevice device : mBluetoothAdapter.getBondedDevices()) {
-      Map<String, Object> ret = new HashMap<>();
-      ret.put("address", device.getAddress());
-      ret.put("name", device.getName());
-      ret.put("type", device.getType());
-      list.add(ret);
-    }
-
-    result.success(list);
+//    List<Map<String, Object>> list = new ArrayList<>();
+//
+//    for (BluetoothDevice device : mBluetoothAdapter.getBondedDevices()) {
+//      Map<String, Object> ret = new HashMap<>();
+//      ret.put("address", device.getAddress());
+//      ret.put("name", device.getName());
+//      ret.put("type", device.getType());
+//      list.add(ret);
+//    }
+//
+//    result.success(list);
   }
 
 
