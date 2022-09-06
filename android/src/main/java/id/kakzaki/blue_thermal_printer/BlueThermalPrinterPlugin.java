@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.util.Log;
 import android.os.AsyncTask;
 import android.os.Handler;
@@ -46,8 +47,6 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener;
 
 import com.google.zxing.BarcodeFormat;
@@ -71,25 +70,14 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
   private FlutterPluginBinding pluginBinding;
   private ActivityPluginBinding activityBinding;
-  private Object initializationLock = new Object();
+  private final Object initializationLock = new Object();
   private Context context;
   private MethodChannel channel;
 
   private EventChannel stateChannel;
-  private EventChannel readChannel;
   private BluetoothManager mBluetoothManager;
 
-  private Application application;
   private Activity activity;
-
-  public static void registerWith(Registrar registrar) {
-    final BlueThermalPrinterPlugin instance = new BlueThermalPrinterPlugin();
-    //registrar.addRequestPermissionsResultListener(instance);
-    Activity activity = registrar.activity();
-    Application application = null;
-    instance.setup(registrar.messenger(), application, activity, registrar, null);
-
-  }
 
   public BlueThermalPrinterPlugin() {
   }
@@ -111,7 +99,6 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
             pluginBinding.getBinaryMessenger(),
             (Application) pluginBinding.getApplicationContext(),
             activityBinding.getActivity(),
-            null,
             activityBinding);
   }
 
@@ -134,28 +121,20 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           final BinaryMessenger messenger,
           final Application application,
           final Activity activity,
-          final PluginRegistry.Registrar registrar,
           final ActivityPluginBinding activityBinding) {
     synchronized (initializationLock) {
       Log.i(TAG, "setup");
       this.activity = activity;
-      this.application = application;
       this.context = application;
       channel = new MethodChannel(messenger, NAMESPACE + "/methods");
       channel.setMethodCallHandler(this);
       stateChannel = new EventChannel(messenger, NAMESPACE + "/state");
       stateChannel.setStreamHandler(stateStreamHandler);
-      readChannel = new EventChannel(messenger, NAMESPACE + "/read");
+      EventChannel readChannel = new EventChannel(messenger, NAMESPACE + "/read");
       readChannel.setStreamHandler(readResultsHandler);
       mBluetoothManager = (BluetoothManager) application.getSystemService(Context.BLUETOOTH_SERVICE);
       mBluetoothAdapter = mBluetoothManager.getAdapter();
-      if (registrar != null) {
-        // V1 embedding setup for activity listeners.
-        registrar.addRequestPermissionsResultListener(this);
-      } else {
-        // V2 embedding setup for activity listeners.
-        activityBinding.addRequestPermissionsResultListener(this);
-      }
+      activityBinding.addRequestPermissionsResultListener(this);
     }
   }
 
@@ -171,13 +150,12 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     stateChannel = null;
     mBluetoothAdapter = null;
     mBluetoothManager = null;
-    application = null;
   }
 
   // MethodChannel.Result wrapper that responds on the platform thread.
   private static class MethodResultWrapper implements Result {
-    private Result methodResult;
-    private Handler handler;
+    private final Result methodResult;
+    private final Handler handler;
 
     MethodResultWrapper(Result result) {
       methodResult = result;
@@ -186,37 +164,22 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
     @Override
     public void success(final Object result) {
-      handler.post(new Runnable() {
-        @Override
-        public void run() {
-          methodResult.success(result);
-        }
-      });
+      handler.post(() -> methodResult.success(result));
     }
 
     @Override
-    public void error(final String errorCode, final String errorMessage, final Object errorDetails) {
-      handler.post(new Runnable() {
-        @Override
-        public void run() {
-          methodResult.error(errorCode, errorMessage, errorDetails);
-        }
-      });
+    public void error(@NonNull final String errorCode, final String errorMessage, final Object errorDetails) {
+      handler.post(() -> methodResult.error(errorCode, errorMessage, errorDetails));
     }
 
     @Override
     public void notImplemented() {
-      handler.post(new Runnable() {
-        @Override
-        public void run() {
-          methodResult.notImplemented();
-        }
-      });
+      handler.post(methodResult::notImplemented);
     }
   }
 
   @Override
-  public void onMethodCall(MethodCall call, Result rawResult) {
+  public void onMethodCall(@NonNull MethodCall call, @NonNull Result rawResult) {
     Result result = new MethodResultWrapper(rawResult);
 
     if (mBluetoothAdapter == null && !"isAvailable".equals(call.method)) {
@@ -225,7 +188,6 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
 
     final Map<String, Object> arguments = call.arguments();
-
     switch (call.method) {
 
       case "state":
@@ -238,7 +200,6 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
       case "isOn":
         try {
-          assert mBluetoothAdapter != null;
           result.success(mBluetoothAdapter.isEnabled());
         } catch (Exception ex) {
           result.error("Error", ex.getMessage(), exceptionToString(ex));
@@ -267,16 +228,36 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
       case "getBondedDevices":
         try {
 
-          if (ContextCompat.checkSelfPermission(activity,
-                  Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+          if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 
-            ActivityCompat.requestPermissions(activity,
-                    new String[] { Manifest.permission.ACCESS_COARSE_LOCATION }, REQUEST_COARSE_LOCATION_PERMISSIONS);
+            if (ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(activity,
+                            Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(activity,
+                            Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
-            pendingResult = result;
-            break;
+              ActivityCompat.requestPermissions(activity,new String[]{
+                      Manifest.permission.BLUETOOTH_SCAN,
+                      Manifest.permission.BLUETOOTH_CONNECT,
+                      Manifest.permission.ACCESS_FINE_LOCATION,
+              }, 1);
+
+              pendingResult = result;
+              break;
+            }
+          } else {
+            if (ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED||ContextCompat.checkSelfPermission(activity,
+                    Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+              ActivityCompat.requestPermissions(activity,
+                      new String[] { Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION }, REQUEST_COARSE_LOCATION_PERMISSIONS);
+
+              pendingResult = result;
+              break;
+            }
           }
-
           getBondedDevices(result);
 
         } catch (Exception ex) {
@@ -334,6 +315,14 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
       case "paperCut":
         paperCut(result);
+        break;
+
+      case "drawerPin2":
+        drawerPin2(result);
+        break;
+
+      case "drawerPin5":
+        drawerPin5(result);
         break;
 
       case "printImage":
@@ -417,7 +406,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
    * @return boolean
    */
   @Override
-  public boolean onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+  public boolean onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
 
     if (requestCode == REQUEST_COARSE_LOCATION_PERMISSIONS) {
       if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -491,10 +480,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
 
         if (THREAD != null && device.ACTION_ACL_CONNECTED.equals(new Intent(BluetoothDevice.ACTION_ACL_CONNECTED).getAction())) {
           result.success(true);
-          return;
         }else{
           result.success(false);
-          return;
         }
 
       } catch (Exception ex) {
@@ -619,6 +606,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     byte[] bb2 = new byte[] { 0x1B, 0x21, 0x20 }; // 2- bold with medium text
     byte[] bb3 = new byte[] { 0x1B, 0x21, 0x10 }; // 3- bold with large text
     byte[] bb4 = new byte[] { 0x1B, 0x21, 0x30 }; // 4- strong text
+    byte[] bb5 = new byte[] { 0x1B, 0x21, 0x50 }; // 5- extra strong text
     if (THREAD == null) {
       result.error("write_error", "not connected", null);
       return;
@@ -641,6 +629,8 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         case 4:
           THREAD.write(bb4);
           break;
+        case 5:
+          THREAD.write(bb5);
       }
 
       switch (align) {
@@ -832,6 +822,34 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
     }
     try {
       THREAD.write(PrinterCommands.FEED_PAPER_AND_CUT);
+      result.success(true);
+    } catch (Exception ex) {
+      Log.e(TAG, ex.getMessage(), ex);
+      result.error("write_error", ex.getMessage(), exceptionToString(ex));
+    }
+  }
+
+  private void drawerPin2(Result result) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+    try {
+      THREAD.write(PrinterCommands.ESC_DRAWER_PIN2);
+      result.success(true);
+    } catch (Exception ex) {
+      Log.e(TAG, ex.getMessage(), ex);
+      result.error("write_error", ex.getMessage(), exceptionToString(ex));
+    }
+  }
+
+  private void drawerPin5(Result result) {
+    if (THREAD == null) {
+      result.error("write_error", "not connected", null);
+      return;
+    }
+    try {
+      THREAD.write(PrinterCommands.ESC_DRAWER_PIN5);
       result.success(true);
     } catch (Exception ex) {
       Log.e(TAG, ex.getMessage(), ex);

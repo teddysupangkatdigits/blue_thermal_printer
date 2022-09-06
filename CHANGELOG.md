@@ -1,3 +1,14 @@
+## 1.2.3
+* demonstrate using enum for readability
+* drawer pin by erica
+* fix bug on ios
+
+## 1.2.2
+* upgrading gradle
+
+## 1.2.1
+* fix android 12 permission
+
 ## 1.2.0
 * fix web build issue
 
