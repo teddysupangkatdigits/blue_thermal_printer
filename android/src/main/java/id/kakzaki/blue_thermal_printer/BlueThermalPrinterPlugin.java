@@ -334,7 +334,7 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
         }
         break;
 
-        case "printImageBytes":
+      case "printImageBytes":
         if (arguments.containsKey("bytes")) {
           byte[] bytes = (byte[]) arguments.get("bytes");
           printImageBytes(result, bytes);
@@ -517,7 +517,12 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           return;
         }
 
-        BluetoothSocket socket = device.createRfcommSocketToServiceRecord(MY_UUID);
+        BluetoothSocket socket = null;
+        try {
+          socket = device.createRfcommSocketToServiceRecord(MY_UUID);
+        } catch (Exception ex) {
+
+        }
 
         if (socket == null) {
           result.error("connect_error", "socket connection not established", null);
@@ -534,7 +539,18 @@ public class BlueThermalPrinterPlugin implements FlutterPlugin, ActivityAware,Me
           result.success(true);
         } catch (Exception ex) {
           Log.e(TAG, ex.getMessage(), ex);
-          result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+          try {
+            Log.e("","trying fallback...");
+
+            socket =(BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
+            socket.connect();
+            THREAD = new ConnectedThread(socket);
+            THREAD.start();
+            Log.e("","Connected");
+            result.success(true);
+          }catch (Exception e2) {
+            result.error("connect_error", ex.getMessage(), exceptionToString(ex));
+          }
         }
       } catch (Exception ex) {
         Log.e(TAG, ex.getMessage(), ex);
