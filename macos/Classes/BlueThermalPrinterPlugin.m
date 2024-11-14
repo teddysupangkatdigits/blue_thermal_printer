@@ -3,6 +3,6 @@
 
 @implementation BlueThermalPrinterPlugin
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
-  [SwiftBlueThermalPrinterPlugin registerWithRegistrar:registrar];
+//  [SwiftBlueThermalPrinterPlugin registerWithRegistrar:registrar];
 }
 @end
